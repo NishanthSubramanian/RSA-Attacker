@@ -1,14 +1,6 @@
 
 class RSAAttack(object):
     def __init__(self, args):
-        if '*' in args.publickey or '?' in args.publickey:
-            self.pubkeyfilelist = glob(args.publickey)
-            self.args = args
-
-        else:
-            if not isinstance(args.publickey, str):
-                args.publickey = args.publickey.name
-
             key = open(args.publickey, 'rb').read()
             self.pubkeyfile = args.publickey
             self.pub_key = PublicKey(key)
