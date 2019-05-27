@@ -1,7 +1,7 @@
 import binascii
 import gmpy2
 import os
-import sys
+import sys, math
 from sympy.solvers import solve
 from sympy import Symbol
 import argparse
@@ -9,6 +9,8 @@ from Crypto.PublicKey import RSA
 import requests
 import re
 from cryptography.fernet import Fernet
+from gmpy2 import isqrt
+import signal
 
 public_key_filename = input("Enter name of public key file : ")
 key_data = open(public_key_filename, 'rb').read()
@@ -67,29 +69,29 @@ class PrivateKey(object):
 
 
 class WienerAttack(object):
-    def rational_to_contfrac(self, x, y):
+    def rational_to_continous_frac(self, x, y):
         a = x // y
         if a * y == x:
             return [a]
         else:
-            pquotients = self.rational_to_contfrac(y, x - a * y)
-            pquotients.insert(0, a)
-            return pquotients
+            quotients = self.rational_to_continous_frac(y, x - a * y)
+            quotients.insert(0, a)
+            return quotients
 
-    def convergents_from_contfrac(self, frac):
+    def convergents_from_continous_frac(self, frac):
         convs = []
         for i in range(len(frac)):
-            convs.append(self.contfrac_to_rational(frac[0:i]))
+            convs.append(self.continous_frac_to_rational(frac[0:i]))
         return convs
 
-    def contfrac_to_rational(self, frac):
+    def continous_frac_to_rational(self, frac):
         if len(frac) == 0:
             return (0, 1)
         elif len(frac) == 1:
             return (frac[0], 1)
         else:
             remainder = frac[1:len(frac)]
-            (num, denom) = self.contfrac_to_rational(remainder)
+            (num, denom) = self.continous_frac_to_rational(remainder)
             return (frac[0] * num + denom, num)
 
     def is_perfect_square(self, n):
@@ -122,8 +124,8 @@ class WienerAttack(object):
         self.p = None
         self.q = None
         sys.setrecursionlimit(100000)
-        frac = self.rational_to_contfrac(e, n)
-        convergents = self.convergents_from_contfrac(frac)
+        frac = self.rational_to_continous_frac(e, n)
+        convergents = self.convergents_from_continous_frac(frac)
         for (k, d) in convergents:
             if k != 0 and (e * d - 1) % k == 0:
                 phi = (e * d - 1) // k
@@ -141,8 +143,9 @@ class WienerAttack(object):
                         break
 
 # Attacks
+
+# Wiener's attack
 def wiener():
-    # Wiener's attack
     wiener = WienerAttack(n, e)
     if wiener.p is not None and wiener.q is not None:
         p = wiener.p
@@ -150,13 +153,11 @@ def wiener():
         priv_key = PrivateKey(int(p), int(q),
                               int(e), int(n))
         print(priv_key)
-
+    priv_key = None
     return priv_key
 
-
-
+# Hastad attack for low public exponents
 def hastads():
-    # Hastad attack for low public exponents
     if e <= 11 and cipher_in_bytes is not None:
         orig = string_to_number(cipher_in_bytes)
         c = orig
@@ -170,20 +171,117 @@ def hastads():
             c += n
     return
 
+class FactorizationError(Exception):
+    pass
+
+# Fermat factorization for close primes
+def fermat(fermat_timeout = 10):
+    try:
+        with timeout(seconds=fermat_timeout):
+            a = isqrt(n)
+            temp = a*a - n
+            b = isqrt(n)
+            while b*b != temp:
+                a = a+1
+                temp = a*a - n
+                b = isqrt(temp)
+            p = a+b
+            q = a-b
+            assert n == p*q
+    except FactorizationError:  
+        return
+    priv_key = None
+    if q is not None:
+        priv_key = PrivateKey(int(p), int(q),
+                              int(e), int(n))
+        print(priv_key)
+
+    return priv_key
+
+# Pollard p-1 factorization
+def pollard():
+    z = []
+    prime = [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59,
+             61, 67, 71, 73, 79, 83, 89, 97, 101, 103, 107, 109, 113, 127, 131,
+             137, 139, 149, 151, 157, 163, 167, 173, 179, 181, 191, 193, 197,
+             199, 211, 223, 227, 229, 233, 239, 241, 251, 257, 263, 269, 271,
+             277, 281, 283, 293, 307, 311, 313, 317, 331, 337, 347, 349, 353,
+             359, 367, 373, 379, 383, 389, 397, 401, 409, 419, 421, 431, 433,
+             439, 443, 449, 457, 461, 463, 467, 479, 487, 491, 499, 503, 509,
+             521, 523, 541, 547, 557, 563, 569, 571, 577, 587, 593, 599, 601,
+             607, 613, 617, 619, 631, 641, 643, 647, 653, 659, 661, 673, 677,
+             683, 691, 701, 709, 719, 727, 733, 739, 743, 751, 757, 761, 769,
+             773, 787, 797, 809, 811, 821, 823, 827, 829, 839, 853, 857, 859,
+             863, 877, 881, 883, 887, 907, 911, 919, 929, 937, 941, 947, 953,
+             967, 971, 977, 983, 991, 997]
+
+    def gcd(a, b):
+        if b == 0:
+            return a
+        return gcd(b, a % b)
+
+    def e(a, b):
+        return pow(a, b, n)
+
+    def mysqrt(n):
+        x = n
+        y = []
+        while(x > 0):
+            y.append(x % 100)
+            x = x // 100
+        y.reverse()
+        a = 0
+        x = 0
+        for p in y:
+            for b in range(9, -1, -1):
+                if(((20*a+b)*b) <= (x*100+p)):
+                    x = x*100+p - ((20*a+b)*b)
+                    a = a*10+b
+                    break
+        return a
+
+    B1 = mysqrt(n)
+    for j in range(0, len(prime)):
+        for i in range(1, int(math.log(B1)/math.log(prime[j]))+1):
+            z.append(prime[j])
+
+    flag = 0
+    for pp in prime:
+        i = 0
+        x = pp
+        while(1):
+            x = e(x, z[i])
+            i = i+1
+            y = gcd(n, x-1)
+            if(y != 1):
+                p = y
+                q = n//y
+                flag = 1
+                break
+            if(i >= len(z)):
+                flag = 2
+                break
+        if flag == 1 or flag ==2:
+            break
+
+    priv_key = None
+    if q is not None:
+        priv_key = PrivateKey(int(p), int(q),
+                              int(e), int(n))
+        print(priv_key)
+
+    return priv_key
+        
+
 # Functions
+
 def string_to_number(s):
-    """
-    String to number.
-    """
     if not len(s):
         return 0
     return int(binascii.hexlify(s), 16)
 
 
 def number_to_string(n):
-    """
-    Number to string.
-    """
     s = hex(n)[2:].rstrip("L")
     if len(s) % 2 != 0:
         s = "0" + s
@@ -192,12 +290,12 @@ def number_to_string(n):
 
 def modular_inverse(a, n):
     if n < 2:
-        raise ValueError("modulus must be greater than 1")
+        raise ValueError("Mod less than 2")
 
     x, y, g = xgcd(a, n)
 
     if g != 1:
-        raise ValueError("no invmod for given @a and @n")
+        raise ValueError("no modular inverse exists")
     else:
         return x % n
 
@@ -226,12 +324,30 @@ def xgcd(a, b):
     return ppx, ppy, a
 
 
+# Copyright source http://stackoverflow.com/a/22348885
+class timeout:
+    def __init__(self, seconds=10, error_message='[-] Timeout'):
+        self.seconds = seconds
+        self.error_message = error_message
+
+    def handle_timeout(self, signum, frame):
+        raise FactorizationError(self.error_message)
+
+    def __enter__(self):
+        signal.signal(signal.SIGALRM, self.handle_timeout)
+        signal.alarm(self.seconds)
+
+    def __exit__(self, type, value, traceback):
+        signal.alarm(0)
+
+
 if __name__ == "__main__":
+    hastads()
     key = wiener()
+    key = fermat()
     if key is not None:
         cipherfile = input("Enter value of cipher file : ")
         with open(cipherfile, 'rb') as infile:
             cipher = infile.read()
         decrypted = key.decrypt(cipher)
         print("Decrypted text : %r" % (decrypted))
-    hastads()
