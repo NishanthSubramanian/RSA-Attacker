@@ -8,4 +8,6 @@ This is a tool that implements some of the feasible attacks on RSA.
 * Hastad's attack on small exponents
 * Prime N attack
 * Wiener's attack using continued fraction approximation
+* Fermat's factorization for close primes
+* Pollard's p-1 factorization for smooth numbers
 
