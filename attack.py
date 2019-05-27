@@ -2,6 +2,7 @@ import binascii
 import gmpy2
 import os
 import sys, math
+import sympy
 from sympy.solvers import solve
 from sympy import Symbol
 import argparse
@@ -244,7 +245,8 @@ def pollard():
     for j in range(0, len(prime)):
         for i in range(1, int(math.log(B1)/math.log(prime[j]))+1):
             z.append(prime[j])
-
+    p = None
+    q = None
     flag = 0
     for pp in prime:
         i = 0
@@ -272,6 +274,17 @@ def pollard():
 
     return priv_key
         
+def tiny_q():
+    priv_key = None
+    for prime in sympy.primerange(2,100000):
+        if n % prime == 0:
+            q = prime
+            p = n // q
+            priv_key = PrivateKey(int(p), int(q),
+                              int(e), int(n))
+            print(priv_key)
+    return priv_key
+
 
 # Functions
 
@@ -342,9 +355,11 @@ class timeout:
 
 
 if __name__ == "__main__":
-    hastads()
-    key = wiener()
-    key = fermat()
+    # hastads()
+    # key = wiener()
+    # key = fermat()
+    # key = pollard()
+    key = tiny_q()
     if key is not None:
         cipherfile = input("Enter value of cipher file : ")
         with open(cipherfile, 'rb') as infile:
